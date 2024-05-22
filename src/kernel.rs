@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+#![feature(naked_functions)]
 
 // SBI とのインターフェイス
 mod io;
@@ -13,6 +14,7 @@ mod malloc;
 extern crate alloc;
 use crate::malloc::BumpPointerAlloc;
 use core::cell::UnsafeCell;
+use core::hint::unreachable_unchecked;
 use alloc::vec::Vec;
 use alloc::string::String;
 use core::ptr;
@@ -22,6 +24,9 @@ use core::panic::PanicInfo;
 
 // インラインアセンブリ
 use core::arch::asm;
+
+mod trap;
+use crate::trap::trap_entry;
 
 // ------------------------------------------------
 
@@ -61,29 +66,21 @@ pub extern "C" fn boot() -> ! {
 #[no_mangle]
 pub fn kernel_main () -> ! {
     unsafe {
+        // BSS 領域のゼロクリア
         let addr_bss_start = &mut __bss as *mut u8;
         let addr_bss_end = &__bss_end as *const u8;
         let length = addr_bss_end as usize - addr_bss_start as usize;
         ptr::write_bytes(addr_bss_start, 0, length);
+
+        // 例外ハンドラの設定
+        write_csr!("stvec", trap_entry as usize);
     }
 
     let hello = "fmt";
     println!("Hello World from {}!", hello);
 
-    let mut sum = 0;
-    let mut test_vec = Vec::<usize>::new();
-    for i in 0..=10 {
-        test_vec.push(i);
-        sum += i;
+    unsafe {
+        asm! ("unimp");
     }
-    println!("test_vec = {:?}, sum = {}", test_vec, sum);
-
-    let mut vec = Vec::<String>::new();
-    loop {
-        let line = read_line();
-        vec.push(line);
-        println!("{:?}", vec);
-    }
-    // panic!("panic panic panic minnaga awateteru");
+    unreachable!();
 }
-
