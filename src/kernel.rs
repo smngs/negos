@@ -7,16 +7,13 @@ mod io;
 mod sbicall;
 
 // fmt::println
-use crate::io::{_print, read_line};
+use crate::io::_print;
 
 // 動的メモリ確保 (malloc)
 mod malloc;
 extern crate alloc;
 use crate::malloc::BumpPointerAlloc;
 use core::cell::UnsafeCell;
-use core::hint::unreachable_unchecked;
-use alloc::vec::Vec;
-use alloc::string::String;
 use core::ptr;
 
 // パニック
@@ -27,6 +24,9 @@ use core::arch::asm;
 
 mod trap;
 use crate::trap::trap_entry;
+
+mod proc;
+use crate::proc::ProcessManager;
 
 // ------------------------------------------------
 
@@ -67,7 +67,8 @@ pub extern "C" fn boot() -> ! {
 pub fn kernel_main () -> ! {
     unsafe {
         // BSS 領域のゼロクリア
-        let addr_bss_start = &mut __bss as *mut u8;
+        // let addr_bss_start = &mut __bss as *mut u9;
+        let addr_bss_start = ptr::addr_of_mut!(__bss);
         let addr_bss_end = &__bss_end as *const u8;
         let length = addr_bss_end as usize - addr_bss_start as usize;
         ptr::write_bytes(addr_bss_start, 0, length);
@@ -80,7 +81,48 @@ pub fn kernel_main () -> ! {
     println!("Hello World from {}!", hello);
 
     unsafe {
-        asm! ("unimp");
+        ProcessManager::create_process(proc_a as u32);
+        ProcessManager::create_process(proc_b as u32);
     }
+    proc_a();
+
     unreachable!();
+}
+
+fn proc_a() {
+    let mut a = 0;
+    loop {
+        print!("A={}", a);
+        unsafe {
+            asm!("add s0, s0, 1");
+        }
+        for _ in 0..1000000 {
+            unsafe {
+                asm!("nop")
+            }
+        }
+        a += 1;
+        unsafe {
+            ProcessManager::yield_process();
+        }
+    }
+}
+
+fn proc_b() {
+    let mut b = 0;
+    loop {
+        print!("B={}", b);
+        unsafe {
+            asm!("add s1, s1, 1");
+        }
+        for _ in 0..1000000 {
+            unsafe {
+                asm!("nop")
+            }
+        }
+        b += 1;
+        unsafe {
+            ProcessManager::yield_process();
+        }
+    }
 }
